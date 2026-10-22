@@ -100,6 +100,11 @@ public class MainActivity extends AegisActivity implements EntryListView.Listene
     // Permission request codes
     private static final int CODE_PERM_CAMERA = 0;
 
+    // Intent extra: a search query to apply as soon as the vault is unlocked, e.g. from a
+    // launcher shortcut or another app ("search", "action" and "pref"/"fragment" are the only
+    // extras MainActivity understands from outside callers).
+    public static final String EXTRA_SEARCH = "search";
+
     private boolean _loaded;
     private boolean _isRecreated;
     private boolean _isDPadPressed;
@@ -850,6 +855,42 @@ public class MainActivity extends AegisActivity implements EntryListView.Listene
         intent.removeExtra("action");
     }
 
+    /**
+     * Applies {@link #EXTRA_SEARCH} from the current intent, if present, once the vault is
+     * unlocked. Mirrors the "already submitted search" state in {@link #onCreateOptionsMenu}
+     * (title/subtitle + filter, search view left collapsed) so a caller lands straight on the
+     * filtered list instead of an expanded, empty search box. Left unconsumed while the vault
+     * is locked, same as {@link #doShortcutActions()} does for its "action" extra - the next
+     * onStart() after unlocking retries it.
+     */
+    private void applySearchIntentExtra() {
+        Intent intent = getIntent();
+        String query = intent.getStringExtra(EXTRA_SEARCH);
+        if (query == null || !_vaultManager.isVaultLoaded()) {
+            return;
+        }
+
+        intent.removeExtra(EXTRA_SEARCH);
+        _pendingSearchQuery = null;
+        _submittedSearchQuery = query;
+        _entryListView.setSearchFilter(query);
+        _searchViewBackPressHandler.setEnabled(true);
+
+        if (_searchView != null) {
+            setTitle(getString(R.string.search));
+            getSupportActionBar().setSubtitle(query);
+        }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // Needed so a search request reaches us while we're already in the foreground: without
+        // it, getIntent() below would keep returning the intent from onCreate().
+        setIntent(intent);
+        applySearchIntentExtra();
+    }
+
     private void handleIncomingIntent() {
         if (!_vaultManager.isVaultLoaded()) {
             return;
@@ -1004,6 +1045,7 @@ public class MainActivity extends AegisActivity implements EntryListView.Listene
         updateLockIcon();
         updateSortCategoryMenu();
         doShortcutActions();
+        applySearchIntentExtra();
         updateErrorCard();
     }
 
